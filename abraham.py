@@ -1,4 +1,6 @@
+import discord
 from discord.ext import commands
+from marsbots_core.resources.discord_utils import is_mentioned, process_mention_as_command
 
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 
@@ -31,6 +33,16 @@ class AbrahamCog(commands.Cog):
         res = self.language_model.document_similarity(doc, query)
         await ctx.send("My question was: " + doc)
         await ctx.send("Your answer's similarity is: " + str(res))
+
+    @commands.Cog.listener("on_message")
+    async def on_message(self, message: discord.Message) -> None:
+        if is_mentioned(message, self.bot.user):
+            ctx = await self.bot.get_context(message)
+            await process_mention_as_command(
+                ctx,
+                self,
+                "I'm sorry, I don't understand you",
+            )
 
 
 def setup(bot: commands.Bot) -> None:
