@@ -1,6 +1,11 @@
 import discord
 from discord.ext import commands
-from marsbots_core.resources.discord_utils import is_mentioned, process_mention_as_command
+from marsbots_core.models import ChatMessage
+from marsbots_core.programs.lm import complete_text
+from marsbots_core.resources.discord_utils import (
+    is_mentioned,
+    remove_mentions,
+)
 
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 
@@ -38,11 +43,43 @@ class AbrahamCog(commands.Cog):
     async def on_message(self, message: discord.Message) -> None:
         if is_mentioned(message, self.bot.user):
             ctx = await self.bot.get_context(message)
-            await process_mention_as_command(
-                ctx,
-                self,
-                "I'm sorry, I don't understand you",
+            async with ctx.channel.typing():
+                prompt = self.format_prompt(message)
+                print(prompt)
+                completion = await complete_text(
+                    self.language_model, prompt, max_tokens=250, stop=["<", "\n"]
+                )
+                await ctx.send(completion)
+
+    def format_prompt(self, message):
+        message_content = remove_mentions(message.content).strip()
+        topic_idx = self.get_similar_topic_idx(message_content)
+        topic_prelude = prompts.topics[topic_idx]["prelude"]
+        last_message = str(
+            ChatMessage(
+                message_content, "P4", deliniator_left="<", deliniator_right=">"
             )
+        )
+        prompt = (
+            self.format_prompt_messages(prompts.prelude)
+            + "\n"
+            + self.format_prompt_messages(topic_prelude)
+            + "\n"
+            + last_message
+            + "\n"
+            + "<S>"
+        )
+        return prompt
+
+    def format_prompt_messages(self, messages):
+        return "\n".join(
+            [f"{message['sender']} {message['message']}" for message in messages]
+        )
+
+    def get_similar_topic_idx(self, query: str) -> int:
+        docs = [topic["document"] for topic in prompts.topics]
+        res = self.language_model.document_search(docs, query)
+        return self.language_model.most_similar_doc_idx(res)
 
 
 def setup(bot: commands.Bot) -> None:
