@@ -4,7 +4,8 @@ from marsbots_core.models import ChatMessage
 from marsbots_core.programs.lm import complete_text
 from marsbots_core.resources.discord_utils import (
     is_mentioned,
-    remove_mentions,
+    replace_bot_mention,
+    replace_mentions_with_usernames,
 )
 
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
@@ -49,10 +50,16 @@ class AbrahamCog(commands.Cog):
                 completion = await complete_text(
                     self.language_model, prompt, max_tokens=250, stop=["<", "\n"]
                 )
-                await ctx.send(completion)
+                await message.reply(completion)
 
     def format_prompt(self, message):
-        message_content = remove_mentions(message.content).strip()
+        message_content = replace_bot_mention(
+            message.content, only_first=True, replacement_str="<S>"
+        )
+        message_content = replace_mentions_with_usernames(
+            message_content, message.mentions
+        )
+        message_content = message_content.strip()
         topic_idx = self.get_similar_topic_idx(message_content)
         topic_prelude = prompts.topics[topic_idx]["prelude"]
         last_message = str(
