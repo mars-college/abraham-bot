@@ -40,10 +40,9 @@ class AbrahamCog(commands.Cog):
         dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
         if (
             is_mentioned(message, self.bot.user)
-            and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
             and message.author.id != self.bot.user.id
+            and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
         ):
-        #if is_mentioned(message, self.bot.user):
             ctx = await self.bot.get_context(message)
             last_messages = await get_discord_messages(
                 ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
