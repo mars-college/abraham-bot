@@ -51,7 +51,7 @@ class AbrahamCog(commands.Cog):
                 prompt = self.format_prompt(last_messages)
                 #print(f'=============\nprompt\n{prompt}=============\n')
                 completion = await complete_text(
-                    self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["]
+                    self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["], use_content_filter=True
                 )
                 print(f'=============\ncompletion\n{completion}=============\n')
                 await message.reply(completion.strip())
