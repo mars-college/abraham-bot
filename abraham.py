@@ -1,19 +1,21 @@
 import datetime
 import random
+from ssl import CHANNEL_BINDING_TYPES
 import discord
 from discord.ext import commands
 from marsbots_core.models import ChatMessage
 from marsbots_core.programs.lm import complete_text
+from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 from marsbots_core.resources.discord_utils import (
     get_discord_messages,
     is_mentioned,
     replace_bot_mention,
     replace_mentions_with_usernames,
 )
-
-from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
-
-from . import prompts
+from . import (
+    prompts,
+    channels
+)
 
 
 def get_nick(obj):
@@ -35,16 +37,20 @@ class AbrahamCog(commands.Cog):
     @commands.Cog.listener("on_message")
     async def on_message(self, message: discord.Message) -> None:
         dm = isinstance(message.channel, discord.channel.DMChannel)
-        if dm:
-            return
-        if is_mentioned(message, self.bot.user):
+        dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
+        if (
+            is_mentioned(message, self.bot.user)
+            and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
+            and message.author.id != self.bot.user.id
+        ):
+        #if is_mentioned(message, self.bot.user):
             ctx = await self.bot.get_context(message)
             last_messages = await get_discord_messages(
                 ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
             )
             async with ctx.channel.typing():
                 prompt = self.format_prompt(last_messages)
-                print(f'=============\nprompt\n{prompt}=============\n')
+                #print(f'=============\nprompt\n{prompt}=============\n')
                 completion = await complete_text(
                     self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["]
                 )
@@ -72,7 +78,6 @@ class AbrahamCog(commands.Cog):
 
     def format_prompt_messages(self, messages):
         return "\n".join(
-            #[f"{message['sender']} {message['message']}" for message in messages]
             ["**[%s]**: %s"%(message['sender'], message['message']) for message in messages]
         )
 
