@@ -1,5 +1,6 @@
-import datetime
-import random
+import time
+import os
+import requests
 from ssl import CHANNEL_BINDING_TYPES
 import discord
 from discord.ext import commands
@@ -13,57 +14,79 @@ from marsbots_core.resources.discord_utils import (
     replace_mentions_with_usernames,
 )
 from . import (
+    settings,
     prompts,
-    channels
+    channels,
+    utils
 )
 
-
-def get_nick(obj):
-    if hasattr(obj, "nick") and obj.nick is not None:
-        return obj.nick
-    else:
-        return obj.name
 
 class AbrahamCog(commands.Cog):
     def __init__(self, bot: commands.bot) -> None:
         self.bot = bot
         self.language_model = OpenAIGPT3LanguageModel(
-            engine="davinci",
-            temperature=0.9,
-            frequency_penalty=0.15,
-            presence_penalty=0.01,
+            engine=settings.GPT3_ENGINE,
+            temperature=settings.GPT3_TEMPERATURE,
+            frequency_penalty=settings.GPT3_FREQUENCY_PENALTY,
+            presence_penalty=settings.GPT3_PRESENCE_PENALTY
         )
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: discord.Message) -> None:
         dm = isinstance(message.channel, discord.channel.DMChannel)
-        dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
+        dm_allowed = dm and message.author.id in channels.ALLOWED_DM_USERS
         if (
-            is_mentioned(message, self.bot.user)
+            (is_mentioned(message, self.bot.user) or dm_allowed)
             and message.author.id != self.bot.user.id
             and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
         ):
             ctx = await self.bot.get_context(message)
-            last_messages = await get_discord_messages(
-                ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
-            )
+
+            question = message.content
+            url = os.environ['SERVER_URL']
+            password = os.environ['SERVER_PASSWORD']
+            folder = os.path.join(os.getcwd(), 'results')
+            headers = {'Content-Type': 'application/json'}
+                        
+            data = {"question": question, "password": password}
+            result = requests.post(url+'/run', json=data, headers=headers).json()
+
+            if 'token' not in result:
+                async with ctx.channel.typing():
+                    await message.reply('Something went wrong :(')
+                return
+
+            token = result['token']
             async with ctx.channel.typing():
-                prompt = self.format_prompt(last_messages)
-                #print(f'=============\nprompt\n{prompt}=============\n')
-                completion = await complete_text(
-                    self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["], use_content_filter=True
-                )
-                print(f'=============\ncompletion\n{completion}=============\n')
-                await message.reply(completion.strip())
+                await message.reply("I will get back to you")
+
+            finished = False
+            while not finished:
+                data = {"token": token, "password": password}
+                result = requests.post(url+'/fetch', json=data, headers=headers)
+                result = result.json()
+                status = result['status']['status']
+                if status == 'complete':
+                    output = result['output']
+                    response = output['response']
+                    filename = utils.download_file(url+'/'+output['video'], folder)
+                    filepath = f'{folder}/{filename}'
+                    finished = True
+                    async with ctx.channel.typing():
+                        local_file = discord.File(filepath, filename=filepath)
+                        await message.reply(response, file=local_file)
+                elif status == 'failed':
+                    finished = True
+                    async with ctx.channel.typing():
+                        await message.reply('Something went wrong :(')
+                else:
+                    time.sleep(1)  
 
     def format_prompt(self, messages):
         last_message_content = replace_bot_mention(messages[-1].content).strip()
         messages_content = self.format_messages(messages)
         topic_idx = self.get_similar_topic_idx(last_message_content)
         topic_prelude = prompts.topics[topic_idx]["prelude"]
-        print("=============")
-        print(f' -> last message: {last_message_content}')
-        print(f' -> search result: {prompts.topics[topic_idx]["document"]}')
         prompt = (
             self.format_prompt_messages(prompts.prelude)
             + "\n"
@@ -112,7 +135,7 @@ class AbrahamCog(commands.Cog):
         if message.author.id == self.bot.user.id:
             return self.bot.user.name
         else:
-            return f"{get_nick(message.author)}"
+            return f"{utils.get_nick(message.author)}"
 
 
 def setup(bot: commands.Bot) -> None:
