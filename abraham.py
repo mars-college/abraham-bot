@@ -1,14 +1,11 @@
 import time
 import os
 import requests
-from ssl import CHANNEL_BINDING_TYPES
 import discord
 from discord.ext import commands
 from marsbots_core.models import ChatMessage
-from marsbots_core.programs.lm import complete_text
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 from marsbots_core.resources.discord_utils import (
-    get_discord_messages,
     is_mentioned,
     remove_role_mentions,
     replace_bot_mention,
@@ -35,7 +32,7 @@ class AbrahamCog(commands.Cog):
         if (
             (
                 is_mentioned(message, self.bot.user)
-                or role_is_mentioned(message)
+                or role_is_mentioned(message, channels.BOT_ROLE)
                 or dm_allowed
             )
             and message.author.id != self.bot.user.id
