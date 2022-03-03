@@ -14,7 +14,8 @@ from marsbots_core.resources.discord_utils import (
 )
 from . import (
     prompts,
-    channels
+    channels,
+    settings
 )
 
 
@@ -28,40 +29,41 @@ class AbrahamCog(commands.Cog):
     def __init__(self, bot: commands.bot) -> None:
         self.bot = bot
         self.language_model = OpenAIGPT3LanguageModel(
-            engine="davinci",
-            temperature=0.9,
-            frequency_penalty=0.15,
-            presence_penalty=0.01,
+            engine=settings.GPT3_ENGINE,
+            temperature=settings.GPT3_TEMPERATURE,
+            frequency_penalty=settings.GPT3_FREQUENCY_PENALTY,
+            presence_penalty=settings.GPT3_PRESENCE_PENALTY
         )
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: discord.Message) -> None:
-        dm = isinstance(message.channel, discord.channel.DMChannel)
-        dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
-        if (
-            is_mentioned(message, self.bot.user)
-            and message.author.id != self.bot.user.id
-            and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
-        ):
-            ctx = await self.bot.get_context(message)
-            last_messages = await get_discord_messages(
-                ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
-            )
-            async with ctx.channel.typing():
-                prompt = self.format_prompt(last_messages)
-                #print(f'=============\nprompt\n{prompt}=============\n')
-                completion = await complete_text(
-                    self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["], use_content_filter=True
+        try:
+            dm = isinstance(message.channel, discord.channel.DMChannel)
+            dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
+            if (
+                is_mentioned(message, self.bot.user)
+                and message.author.id != self.bot.user.id
+                and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
+            ):
+                ctx = await self.bot.get_context(message)
+                last_messages = await get_discord_messages(
+                    ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
                 )
-                print(f'=============\ncompletion\n{completion}=============\n')
-                await message.reply(completion.strip())
+                async with ctx.channel.typing():
+                    prompt = self.format_prompt(last_messages)
+                    completion = await complete_text(
+                        self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["], use_content_filter=True
+                    )
+                    await message.reply(completion.strip())                    
+        except Exception as e:
+            print(f'Error: {e}')
+            await message.reply(f':)')
 
     def format_prompt(self, messages):
         last_message_content = replace_bot_mention(messages[-1].content).strip()
         messages_content = self.format_messages(messages)
         topic_idx = self.get_similar_topic_idx(last_message_content)
         topic_prelude = prompts.topics[topic_idx]["prelude"]
-        print("=============")
         print(f' -> last message: {last_message_content}')
         print(f' -> search result: {prompts.topics[topic_idx]["document"]}')
         prompt = (
