@@ -1,6 +1,4 @@
 import datetime
-import random
-from ssl import CHANNEL_BINDING_TYPES
 import discord
 from discord.ext import commands
 from marsbots_core.models import ChatMessage
@@ -11,12 +9,9 @@ from marsbots_core.resources.discord_utils import (
     is_mentioned,
     replace_bot_mention,
     replace_mentions_with_usernames,
+    role_is_mentioned,
 )
-from . import (
-    prompts,
-    channels,
-    settings
-)
+from . import prompts, channels, settings
 
 
 def get_nick(obj):
@@ -25,6 +20,7 @@ def get_nick(obj):
     else:
         return obj.name
 
+
 class AbrahamCog(commands.Cog):
     def __init__(self, bot: commands.bot) -> None:
         self.bot = bot
@@ -32,7 +28,7 @@ class AbrahamCog(commands.Cog):
             engine=settings.GPT3_ENGINE,
             temperature=settings.GPT3_TEMPERATURE,
             frequency_penalty=settings.GPT3_FREQUENCY_PENALTY,
-            presence_penalty=settings.GPT3_PRESENCE_PENALTY
+            presence_penalty=settings.GPT3_PRESENCE_PENALTY,
         )
 
     @commands.Cog.listener("on_message")
@@ -41,7 +37,10 @@ class AbrahamCog(commands.Cog):
             dm = isinstance(message.channel, discord.channel.DMChannel)
             dm_allowed = dm and message.author.id in channels.DM_ALLOWED_USERS
             if (
-                is_mentioned(message, self.bot.user)
+                (
+                    is_mentioned(message, self.bot.user)
+                    or role_is_mentioned(message, channels.BOT_ROLE)
+                )
                 and message.author.id != self.bot.user.id
                 and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
             ):
@@ -52,19 +51,23 @@ class AbrahamCog(commands.Cog):
                 async with ctx.channel.typing():
                     prompt = self.format_prompt(last_messages)
                     completion = await complete_text(
-                        self.language_model, prompt, max_tokens=250, stop=["<", "\n", "**["], use_content_filter=True
+                        self.language_model,
+                        prompt,
+                        max_tokens=250,
+                        stop=["<", "\n", "**["],
+                        use_content_filter=True,
                     )
-                    await message.reply(completion.strip())                    
+                    await message.reply(completion.strip())
         except Exception as e:
-            print(f'Error: {e}')
-            await message.reply(f':)')
+            print(f"Error: {e}")
+            await message.reply(":)")
 
     def format_prompt(self, messages):
         last_message_content = replace_bot_mention(messages[-1].content).strip()
         messages_content = self.format_messages(messages)
         topic_idx = self.get_similar_topic_idx(last_message_content)
         topic_prelude = prompts.topics[topic_idx]["prelude"]
-        print(f' -> last message: {last_message_content}')
+        print(f" -> last message: {last_message_content}")
         print(f' -> search result: {prompts.topics[topic_idx]["document"]}')
         prompt = (
             self.format_prompt_messages(prompts.prelude)
@@ -73,13 +76,18 @@ class AbrahamCog(commands.Cog):
             + "\n"
             + messages_content
             + "\n"
-            + "**["+self.bot.user.name+"]**:"
+            + "**["
+            + self.bot.user.name
+            + "]**:"
         )
         return prompt
 
     def format_prompt_messages(self, messages):
         return "\n".join(
-            ["**[%s]**: %s"%(message['sender'], message['message']) for message in messages]
+            [
+                "**[%s]**: %s" % (message["sender"], message["message"])
+                for message in messages
+            ]
         )
 
     def format_messages(self, messages_content):
