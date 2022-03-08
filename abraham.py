@@ -5,9 +5,11 @@ from marsbots_core.models import ChatMessage
 from marsbots_core.programs.lm import complete_text
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 from marsbots_core.resources.discord_utils import (
+    get_reply_chain,
     get_discord_messages,
     is_mentioned,
     replace_bot_mention,
+    remove_role_mentions,
     replace_mentions_with_usernames,
     role_is_mentioned,
 )
@@ -45,65 +47,67 @@ class AbrahamCog(commands.Cog):
                 and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
             ):
                 ctx = await self.bot.get_context(message)
-                last_messages = await get_discord_messages(
-                    ctx.channel, limit=6, after=datetime.timedelta(minutes=20)
-                )
                 async with ctx.channel.typing():
-                    prompt = self.format_prompt(last_messages)
+                    prompt = await self.format_prompt(ctx, message)
                     completion = await complete_text(
-                        self.language_model,
-                        prompt,
-                        max_tokens=250,
-                        stop=["<", "\n", "**["],
-                        use_content_filter=True,
+                        self.language_model, prompt, max_tokens=80, stop=["<", "\n\n"],
+                        use_content_filter=True
                     )
                     await message.reply(completion.strip())
+
         except Exception as e:
             print(f"Error: {e}")
             await message.reply(":)")
 
-    def format_prompt(self, messages):
-        last_message_content = replace_bot_mention(messages[-1].content).strip()
-        messages_content = self.format_messages(messages)
+    async def format_prompt(
+        self, 
+        ctx: commands.context, 
+        message: discord.Message
+    ) -> str:
+        last_message_content = self.message_preprocessor(message)
         topic_idx = self.get_similar_topic_idx(last_message_content)
-        topic_prelude = prompts.topics[topic_idx]["prelude"]
-        print(f" -> last message: {last_message_content}")
-        print(f' -> search result: {prompts.topics[topic_idx]["document"]}')
-        prompt = (
-            self.format_prompt_messages(prompts.prelude)
-            + "\n"
-            + self.format_prompt_messages(topic_prelude)
-            + "\n"
-            + messages_content
-            + "\n"
-            + "**["
-            + self.bot.user.name
-            + "]**:"
+        topic_prefix = prompts.topics[topic_idx]["prefix"]
+        #print(f" -> last message: {last_message_content}")
+        #print(f' -> search result: {prompts.topics[topic_idx]["document"]}')
+        last_messages = await get_discord_messages(ctx.channel, 1)
+        reply_chain = await get_reply_chain(ctx, message, depth=6)
+        if reply_chain:
+            reply_chain = self.format_reply_chain(reply_chain)
+        last_message_text = str(
+            ChatMessage(
+                f"{self.message_preprocessor(last_messages[0])}",
+                "M",
+                deliniator_left="<",
+                deliniator_right=">",
+            )
+        ).strip()
+        prompt = topic_prefix
+        if reply_chain:
+            prompt += f"{reply_chain}\n"
+        prompt += "\n".join(
+            [
+                last_message_text,
+                "<Abraham>",
+            ]
         )
         return prompt
 
-    def format_prompt_messages(self, messages):
-        return "\n".join(
-            [
-                "**[%s]**: %s" % (message["sender"], message["message"])
-                for message in messages
-            ]
-        )
-
-    def format_messages(self, messages_content):
-        return "\n".join(
-            [
-                str(
-                    ChatMessage(
-                        self.message_preprocessor(message_content),
-                        self.get_sender(message_content),
-                        deliniator_left="**[",
-                        deliniator_right="]**:",
-                    )
+    def format_reply_chain(self, messages):
+        reply_chain = []
+        for message in messages:
+            if message.author.id == self.bot.user.id:
+                sender_name = "Chatsubo"
+            else:
+                sender_name = "M"
+            reply_chain.append(
+                ChatMessage(
+                    content=f"{self.message_preprocessor(message)}",
+                    sender=sender_name,
+                    deliniator_left="<",
+                    deliniator_right=">",
                 )
-                for message_content in messages_content
-            ]
-        )
+            )
+        return "\n".join([str(message).strip() for message in reply_chain])
 
     def get_similar_topic_idx(self, query: str) -> int:
         docs = [topic["document"] for topic in prompts.topics]
