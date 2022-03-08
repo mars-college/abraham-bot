@@ -1,0 +1,5 @@
+{
+  "name": "Clip Art",
+  "token_env": "BOT_TOKEN",
+  "command_prefix": "$"
+}

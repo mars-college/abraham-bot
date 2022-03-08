@@ -1,3 +1,4 @@
+EDEN_SERVER_URL = 'https://saturn-eden.ngrok.io'
 GPT3_ENGINE = 'davinci'
 GPT3_TEMPERATURE = 0.9
 GPT3_FREQUENCY_PENALTY = 0.15
