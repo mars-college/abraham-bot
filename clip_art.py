@@ -1,11 +1,13 @@
 import time
 import re
 import os
+import asyncio
 import requests
+from eden.client import Client
 import discord
 from discord.ext import commands
 from marsbots_core.models import ChatMessage
-#from marsbots_core.programs.lm import complete_text
+from marsbots_core.programs.lm import complete_text
 from marsbots_core.resources.language_models import OpenAIGPT3LanguageModel
 from marsbots_core.resources.discord_utils import (
     is_mentioned,
@@ -16,13 +18,10 @@ from marsbots_core.resources.discord_utils import (
 )
 from . import settings, prompts, channels, utils
 
-from eden.client import Client
-
 client = Client(
     url = settings.EDEN_SERVER_URL, 
     username = 'mars_college'
 )
-
 
 class ClipArt(commands.Cog):
     def __init__(self, bot: commands.bot) -> None:
@@ -47,7 +46,7 @@ class ClipArt(commands.Cog):
             and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
         ):
             ctx = await self.bot.get_context(message)
-            prompt = replace_bot_mention(message.content).strip()
+            prompt = self.message_preprocessor(message).strip()
             url = re.search("(?P<url>https?://[^\s]+)", prompt)
             
             if url:
@@ -63,36 +62,45 @@ class ClipArt(commands.Cog):
                 config = {"text_input": prompt}
             
             result = client.run(config)
-            
+                
             if "token" not in result:
                 async with ctx.channel.typing():
                     await message.reply("Something went wrong :(")
                 return
 
             token = result["token"]
+
             async with ctx.channel.typing():
-                await message.reply("I will get back to you")
 
-            finished = False
-            while not finished:
-                result = client.fetch(token = token)
-                status = result["status"]["status"]
-                if status == "complete":
-                    filepath = 'testimage.png'
-                    output_img = result['output']['creation']
-                    output_img.save(filepath)
-                    finished = True
-                    async with ctx.channel.typing():
+                completion = await complete_text(
+                    self.language_model, prompts.start_prompt, max_tokens=100, stop=["\n", "\n\n"],
+                    use_content_filter=True
+                )
+                await message.reply(completion)
+
+                finished = False
+                while not finished:
+                    result = client.fetch(token = token)
+                    status = result["status"]["status"]
+                    if status == "complete":
+                        filepath = '_last_image_.png'
+                        output_img = result['output']['creation']
+                        output_img.save(filepath)
+                        finished = True
                         local_file = discord.File(filepath, filename=filepath)
-                        await message.reply('result', file=local_file)
-
-                elif status == "failed":
-                    finished = True
-                    async with ctx.channel.typing():
+                        completion = await complete_text(
+                            self.language_model, prompts.stop_prompt, max_tokens=100, stop=["\n", "\n\n"],
+                            use_content_filter=True
+                        )
+                        result_string = f'{completion}\n\n**{prompt}**:'
+                        await message.reply(result_string, file=local_file)
+                        
+                    elif status == "failed":
+                        finished = True
                         await message.reply("Something went wrong :(")
-                else:
-                    time.sleep(5)
-
+                    else:
+                        #time.sleep(2)
+                        asyncio.sleep(self.interval)
 
     def format_prompt(self, messages):
         last_message_content = replace_bot_mention(messages[-1].content).strip()
