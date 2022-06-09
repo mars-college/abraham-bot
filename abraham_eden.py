@@ -37,7 +37,7 @@ class AbrahamCog(commands.Cog):
             )
             and message.author.id != self.bot.user.id
             and (dm_allowed or message.channel.id in channels.ALLOWED_CHANNELS)
-        ):
+        ) and not message.author.bot:
             ctx = await self.bot.get_context(message)
 
             question = message.content
