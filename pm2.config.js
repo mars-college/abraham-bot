@@ -1,10 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: "abraham",
-      script: "../../bot.py",
+      name: "clip_art",
+      script: "../../../../bot.py",
       interpreter: "python",
-      args: "./abraham.json --cog-path=bots.abraham-bot.abraham --dotenv-path=.env",
+      args: "./clip_art.json --cog-path=bots.marsbots.2022.clip_art.clip_art --dotenv-path=.env",
       watch: ["."],
       ignore_watch: ["__pycache__", "*.pyc"],
       watch_delay: 1000
